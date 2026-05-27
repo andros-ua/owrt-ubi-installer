@@ -2,6 +2,8 @@
 
 . /lib/upgrade/nand.sh
 
+BOARD_NAME="creatlentem_clt-r30b1"
+
 # LED state conventions:
 #   lime  (red+green on)  = install complete, about to reboot
 #   green (fast blink)    = install in progress
@@ -59,18 +61,24 @@ echo
 
 INSTALLER_DIR="/installer"
 PRELOADER="$INSTALLER_DIR/mt7981-spim-nand-ubi-ddr3-1866-bl2.img"
-FIP="$INSTALLER_DIR/mt7981_creatlentem_clt-r30b1-u-boot.fip"
+FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-u-boot.fip"
 # Use ls to resolve the wildcard at runtime so the script does not need to
 # hardcode the OpenWrt build version string in the filename.
-RECOVERY="$(ls -1 $INSTALLER_DIR/openwrt-*mediatek-filogic-creatlentem_clt-r30b1-ubi-initramfs-recovery.itb)"
+RECOVERY="$(ls -1 $INSTALLER_DIR/openwrt-*mediatek-filogic-${BOARD_NAME}-ubi-initramfs-recovery.itb)"
 
 # These flags allow selectively skipping volume creation.
 HAS_ENV=1
 HAS_FIP=1
 HAS_FACTORY=1
+# The backup volume takes storage space - make it optional
+HAS_BACKUP=1
 
 if [ ! -s "$PRELOADER" ] || [ ! -s "$FIP" ] || [ ! -s "$RECOVERY" ]; then
 	trigger_crash "Missing files. Aborting."
+fi
+
+if [ -z "$(find_mtd_index "new_ubi")" ]; then
+	trigger_crash "Failed to find target mtd partition. Aborting."
 fi
 
 # UBI device nodes are not created by udev in the installer initramfs, so we
@@ -79,7 +87,7 @@ ubi_mknod() {
 	local dev="$1"
 	dev="${dev##*/}"
 	[ -e "/sys/class/ubi/$dev/uevent" ] || return 2
-	source "/sys/class/ubi/$dev/uevent"
+	. "/sys/class/ubi/$dev/uevent"
 	mknod "/dev/$dev" c $MAJOR $MINOR
 }
 
@@ -122,10 +130,13 @@ install_get_factory() {
 # boot_backup UBI volume so the original bootloader and calibration data can be
 # recovered if the install goes wrong.
 install_prepare_mtd_backup() {
-	log "preparing backup of the $2 from mtd$1 ${3:+using $3 blocks} ${4:+after skipping first $4 blocks}"
-	local mtdnum=$1
-	local ebs=$(cat /sys/class/mtd/mtd${mtdnum}/erasesize)
-	dd bs=$ebs if=/dev/mtd${mtdnum} of=/tmp/backup/$2.bin ${3:+count=$3} ${4:+skip=$4}
+	mkdir -p /tmp/backup
+	for part in "$@" ; do
+		log "preparing backup of $part"
+		local mtdnum=$(find_mtd_index "$part")
+		local ebs=$(cat /sys/class/mtd/mtd${mtdnum}/erasesize)
+		dd bs=$ebs if=/dev/mtd${mtdnum} of=/tmp/backup/$part.bin && log "done"
+	done
 }
 
 # Write all pre-install backups and the full dmesg (which includes all installer
@@ -151,7 +162,7 @@ install_write_backup() {
 # Volumes 4 (recovery), 5 (fit), and 6 (boot_backup) are written separately.
 install_prepare_ubi() {
 	log "preparing UBI on $1"
-	local mtddev=$1
+	local mtddev=/dev/mtd$(find_mtd_index "$1")
 	[ -e /sys/class/ubi/ubi0 ] && ubidetach -p $mtddev
 	ubiformat -y $mtddev
 	sleep 1
@@ -166,18 +177,10 @@ install_prepare_ubi() {
 	[ "$HAS_ENV" = "1" ] && ubimkvol /dev/ubi0 -n 2 -s 126976 -N ubootenv && ubimkvol /dev/ubi0 -n 3 -s 126976 -N ubootenv2
 }
 
-log "backing up BL2, Factory, FIP from mtd0, mtd1 before erase"
-mkdir /tmp/backup
-
-# mtd0 = BL2 (full partition)
-# mtd1 layout at 128k erase blocks:
-#   blocks 0-3    (0x000000-0x07ffff): U-Boot environment
-#   blocks 4-19   (0x080000-0x17ffff): Factory / Wi-Fi EEPROM
-#   blocks 20-35  (0x180000-0x27ffff): FIP (BL31 + U-Boot)
-install_prepare_mtd_backup 0 BL2
-install_prepare_mtd_backup 1 u-boot-env 4
-install_prepare_mtd_backup 1 Factory 16 4
-install_prepare_mtd_backup 1 FIP 16 20
+# Create bakups of specified MTD partitions before we erase or reformat them.
+# This allows recovery of the original bootloader and Wi-Fi calibration data if something goes wrong with the install.
+# The backups are stored in a dedicated UBI volume named boot_backup.
+[ "$HAS_BACKUP" = "1" ] && install_prepare_mtd_backup BL2 u-boot-env Factory FIP
 
 # Extract Wi-Fi calibration data before erasing mtd1. Loss of this data
 # requires physical access to restore and will break wireless permanently.
@@ -185,14 +188,15 @@ install_get_factory /dev/mtd1 0x80000 "7981" || trigger_crash "cannot find Wi-Fi
 
 # BL2 is written to two offsets for redundancy; the SoC ROM tries the second
 # copy if the first fails its integrity check.
-log "redundantly write bl2"
 for bl2start in 0x0 0x80000 ; do
-	mtd -p $bl2start write $PRELOADER /dev/mtd0
+	log "write bl2 at offset $bl2start"
+	mtd -p $bl2start write $PRELOADER /dev/mtd0 || \
+	log "bl2 write to mtd0 at offset $bl2start failed"
 done
 
-# mtd1 holds everything above BL2: env, factory, FIP, and the UBI partition.
+# mtd labeled "new_ubi" holds everything above BL2: env, factory, FIP, and the UBI partition.
 # This call erases and reformats it entirely.
-install_prepare_ubi /dev/mtd1
+install_prepare_ubi new_ubi
 
 log "write recovery ubi volume"
 RECOVERY_SIZE=$(du -b $RECOVERY | awk '{print $1}')
@@ -205,7 +209,7 @@ ubiupdatevol /dev/ubi0_4 $RECOVERY
 log "create fit ubi volume"
 ubimkvol /dev/ubi0 -n 5 -s 126976 -N fit
 
-install_write_backup
+[ "$HAS_BACKUP" = "1" ] && install_write_backup
 
 sync
 

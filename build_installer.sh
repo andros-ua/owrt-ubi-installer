@@ -19,6 +19,8 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
+BOARD_NAME="creatlentem_clt-r30b1"
+
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
 
@@ -324,14 +326,20 @@ repack_initrd() {
 # ---------------------------------------------------------------------------
 # allow_mtd_write
 #
-# Patches the device tree (fdt-1) so the installer can write to partitions
-# that the stock firmware would otherwise protect.  Specifically:
+# Patches the installer's device tree (fdt-1) to give the installer script
+# raw access to every MTD partition on the SPI-NAND flash:
 #
-#   - Removes all "read-only" partition flags
-#   - Removes "linux,ubi" volume hints (so the kernel doesn't auto-attach
-#     the existing UBI device and block our raw NAND writes)
-#   - Renames "ubi" volume labels to "ibu" so the kernel does not
-#     auto-attach the existing UBI device and block our raw NAND writes
+#   - Strips "read-only" flags so all partitions are writable.
+#   - Removes "linux,ubi" hints to prevent the kernel from auto-attaching
+#     the existing UBI device before the installer has a chance to reformat it.
+#   - Renames the "spi-nand" compatible string to prevent any NAND driver
+#     from binding — the installer accesses flash through raw MTD only.
+#   - Renames the existing UBI partition label to "new_ubi" so the installer
+#     script can locate its target by name via find_mtd_index.
+#   - Appends partition definitions for regions that exist in the stock layout
+#     but are absent from the OpenWrt DTB (u-boot-env, Factory, FIP), giving
+#     the installer named MTD landmarks for backup and data extraction before
+#     the partition table is replaced by the all-in-UBI layout.
 # ---------------------------------------------------------------------------
 allow_mtd_write() {
 	"$DTC" -I dtb -O dts -o "${WORKDIR}/fdt-1.dts" "${WORKDIR}/fdt-1"
@@ -339,7 +347,34 @@ allow_mtd_write() {
 	grep -v 'read-only' "${WORKDIR}/fdt-1.dts" > "${WORKDIR}/fdt-1.dts.patched"
 	grep -v 'linux,ubi' "${WORKDIR}/fdt-1.dts.patched" > "${WORKDIR}/fdt-1.dts.patched2"
 	mv "${WORKDIR}/fdt-1.dts.patched2" "${WORKDIR}/fdt-1.dts.patched"
-	sed -i 's/"ubi"/"ibu"/' "${WORKDIR}/fdt-1.dts.patched"
+	sed -i 's/"spi-nand"/"u-boot-dont-touch-spi-nand"/' "${WORKDIR}/fdt-1.dts.patched"
+	sed -i 's/"ubi"/"new_ubi"/' "${WORKDIR}/fdt-1.dts.patched"
+	sed -i 's/partitions {/mtdparts: partitions {/' "${WORKDIR}/fdt-1.dts.patched"
+	cat >>"${WORKDIR}/fdt-1.dts.patched" <<EOF
+
+&mtdparts {
+	partition@100000 {
+		label = "u-boot-env";
+		reg = <0x100000 0x80000>;
+	};
+
+	partition@180000 {
+		label = "Factory";
+		reg = <0x180000 0x200000>;
+	};
+
+	partition@380000 {
+		label = "FIP";
+		reg = <0x380000 0x200000>;
+		read-only;
+	};
+
+	partition@580000 {
+		label = "old_ubi";
+		reg = <0x0580000 0x7000000>;
+	};
+};
+EOF
 	"$DTC" -I dts -O dtb -o "${WORKDIR}/fdt-1" "${WORKDIR}/fdt-1.dts.patched"
 }
 
@@ -478,12 +513,12 @@ bundle_initrd() {
 #             flashes the FIP, then boots into the new U-Boot which finally
 #             flashes the sysupgrade image.
 # ---------------------------------------------------------------------------
-creatlentem_clt_r30b1_installer() {
+ubi_installer() {
 	OPENWRT_RELEASE="25.12.4"
 	OPENWRT_TARGET="https://dlowrt.kuiukov.com/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
 	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-creatlentem_clt-r30b1-ubi-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-creatlentem_clt-r30b1-ubi-squashfs-sysupgrade.itb"
+	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-ubi-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-ubi-squashfs-sysupgrade.itb"
 
 	# Packages added only to the recovery image (LuCI web UI).
 	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)
@@ -524,11 +559,11 @@ creatlentem_clt_r30b1_installer() {
 	#   recovery .itb — the image built in step 1
 	bundle_initrd installer "${INSTALLERDIR}/dl/${OPENWRT_INITRD}" \
 		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981-spim-nand-ubi-ddr3-1866-bl2.img" \
-		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_creatlentem_clt-r30b1-u-boot.fip" \
+		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-u-boot.fip" \
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"
 	rm -r "${WORKDIR}"
 }
 
-creatlentem_clt_r30b1_installer
+ubi_installer

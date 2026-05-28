@@ -6,15 +6,15 @@ BOARD_NAME=$(cat /proc/device-tree/compatible | tr '\0' '\n' | head -1 | tr ',' 
 
 # LED definitions for the installer initramfs.
 # These are used to signal installer status and errors to the user via the board's LED(s).
-#LED_BLUE="blue:status"
+LED_BLUE="blue:status"
 LED_GREEN="green:status"
 LED_RED="red:status"
 
 led_reset() {
-#	echo none > /sys/class/leds/${LED_BLUE}/trigger
+	echo none > /sys/class/leds/${LED_BLUE}/trigger
 	echo none > /sys/class/leds/${LED_GREEN}/trigger
 	echo none > /sys/class/leds/${LED_RED}/trigger
-#	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
+	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
 	echo 0 > /sys/class/leds/${LED_GREEN}/brightness
 	echo 0 > /sys/class/leds/${LED_RED}/brightness
 }
@@ -69,7 +69,7 @@ echo
 
 INSTALLER_DIR="/installer"
 PRELOADER="$(ls -1 $INSTALLER_DIR/mt7981-*-bl2.img)"
-FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-u-boot.fip"
+FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-ddr3-u-boot.fip"
 # Use ls to resolve the wildcard at runtime so the script does not need to
 # hardcode the OpenWrt build version string in the filename.
 RECOVERY="$(ls -1 $INSTALLER_DIR/openwrt-*mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb)"

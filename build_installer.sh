@@ -19,14 +19,13 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-# Board-specific variable — update these when switching to a new target.
-BOARD_NAME="creatlentem_clt-r30b1-ubi"
+BOARD_NAME="cmcc_rax3000m-ubi"
 
 # Name of the BL2 bootloader file to embed in the installer image.
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="25.12.4"
+OPENWRT_RELEASE="25.12.5"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -532,7 +531,7 @@ ubi_installer() {
 	#   recovery .itb — the image built in step 1
 	bundle_initrd installer "${INSTALLERDIR}/dl/${OPENWRT_INITRD}" \
 		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/${PRELOADER}" \
-		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-u-boot.fip" \
+		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-ddr3-u-boot.fip" \
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"

@@ -137,7 +137,7 @@ install_prepare_mtd_backup() {
 # and is the primary diagnostic resource if something goes wrong post-flash.
 install_write_backup() {
 	log "writing backup files to ubi volume..."
-	ubimkvol /dev/ubi0 -n 6 -s 5MiB -N boot_backup
+	ubimkvol /dev/ubi0 -n 6 -s 6MiB -N boot_backup
 	ubi_mknod ubi0_6
 	mount -t ubifs /dev/ubi0_6 /mnt
 	cp /tmp/backup/* /mnt

@@ -4,34 +4,42 @@
 
 BOARD_NAME="creatlentem_clt-r30b1"
 
-# LED state conventions:
-#   lime  (red+green on)  = install complete, about to reboot
-#   green (fast blink)    = install in progress
-#   red   (slow blink)    = fatal error, system will panic after 5s
+# LED definitions for the installer initramfs.
+# These are used to signal installer status and errors to the user via the board's LED(s).
+#LED_BLUE="blue:status"
+LED_GREEN="green:status"
+LED_RED="red:status"
 
-led_lime() {
-	echo none > /sys/class/leds/red:status/trigger
-	echo none > /sys/class/leds/green:status/trigger
-	echo 255 > /sys/class/leds/red:status/brightness
-	echo 255 > /sys/class/leds/green:status/brightness
+led_reset() {
+#	echo none > /sys/class/leds/${LED_BLUE}/trigger
+	echo none > /sys/class/leds/${LED_GREEN}/trigger
+	echo none > /sys/class/leds/${LED_RED}/trigger
+#	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
+	echo 0 > /sys/class/leds/${LED_GREEN}/brightness
+	echo 0 > /sys/class/leds/${LED_RED}/brightness
 }
 
-led_green() {
-	echo none > /sys/class/leds/red:status/trigger
-	echo 0 > /sys/class/leds/red:status/brightness
-	echo 0 > /sys/class/leds/green:status/brightness
-	echo timer > /sys/class/leds/green:status/trigger
-	echo 1 > /sys/class/leds/green:status/delay_on
-	echo 70 > /sys/class/leds/green:status/delay_off
+# Installation complete: solid LED.
+led_done() {
+	led_reset
+	echo 255 > /sys/class/leds/${LED_RED}/brightness
+	echo 255 > /sys/class/leds/${LED_GREEN}/brightness
 }
 
-led_red() {
-	echo none > /sys/class/leds/green:status/trigger
-	echo 0 > /sys/class/leds/green:status/brightness
-	echo 0 > /sys/class/leds/red:status/brightness
-	echo timer > /sys/class/leds/red:status/trigger
-	echo 120 > /sys/class/leds/red:status/delay_on
-	echo 200 > /sys/class/leds/red:status/delay_off
+# Flashing in progress: LED with a short delay to indicate activity.
+led_run() {
+	led_reset
+	echo timer > /sys/class/leds/${LED_GREEN}/trigger
+	echo 1 > /sys/class/leds/${LED_GREEN}/delay_on
+	echo 70 > /sys/class/leds/${LED_GREEN}/delay_off
+}
+
+# Error state: LED with a long delay to indicate a problem.
+led_error() {
+	led_reset
+	echo timer > /sys/class/leds/${LED_RED}/trigger
+	echo 120 > /sys/class/leds/${LED_RED}/delay_on
+	echo 200 > /sys/class/leds/${LED_RED}/delay_off
 }
 
 # All installer messages go to the kernel ring buffer so they appear in both
@@ -45,18 +53,18 @@ log () {
 # intentional here — it produces a crash dump and prevents the board from
 # silently booting into a half-installed state.
 trigger_crash() {
-	led_red
+	led_error
 	sleep 5
 	log "$@"
 	echo c > /proc/sysrq-trigger
 }
 
-led_green
+led_run
 
 sleep 1
 
 echo
-log OpenWrt UBI installer
+log "OpenWrt UBI installer (${BOARD_NAME})"
 echo
 
 INSTALLER_DIR="/installer"
@@ -170,8 +178,6 @@ install_prepare_ubi() {
 	[ "$HAS_ENV" = "1" ] && ubimkvol /dev/ubi0 -n 2 -s 126976 -N ubootenv && ubimkvol /dev/ubi0 -n 3 -s 126976 -N ubootenv2
 }
 
-log "backing up BL2, Factory, FIP from mtd0, mtd1 before erase"
-mkdir -p /tmp/backup
 
 # mtd0 = BL2 (full partition)
 # mtd1 layout at 128k erase blocks:
@@ -179,6 +185,8 @@ mkdir -p /tmp/backup
 #   blocks 4-19   (0x080000-0x17ffff): Factory / Wi-Fi EEPROM
 #   blocks 20-35  (0x180000-0x27ffff): FIP (BL31 + U-Boot)
 if [ "$HAS_BACKUP" = "1" ]; then
+	log "backing up BL2, Factory, FIP from mtd0, mtd1 before erase"
+	mkdir -p /tmp/backup
 	install_prepare_mtd_backup 0 BL2
 	install_prepare_mtd_backup 1 u-boot-env 4
 	install_prepare_mtd_backup 1 Factory 16 4
@@ -213,13 +221,15 @@ ubiupdatevol /dev/ubi0_4 $RECOVERY
 log "create fit ubi volume"
 ubimkvol /dev/ubi0 -n 5 -s 126976 -N fit
 
-[ "$HAS_BACKUP" = "1" ] && install_write_backup
+if [ "$HAS_BACKUP" = "1" ]; then
+	install_write_backup
+fi
 
 sync
 
 # Lime = done. The 5s pause makes the state visible before the board disappears
 # from the console on reboot.
-led_lime
+led_done
 
 sleep 5
 

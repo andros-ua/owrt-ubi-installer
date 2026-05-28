@@ -19,8 +19,7 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-# Board-specific variable — update these when switching to a new target.
-BOARD_NAME="creatlentem_clt-r30b1-ubi"
+BOARD_NAME="comfast_cf-wr632ax-ubi"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"

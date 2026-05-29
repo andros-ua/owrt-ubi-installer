@@ -19,7 +19,8 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-BOARD_NAME="creatlentem_clt-r30b1"
+# Board-specific variable — update these when switching to a new target.
+BOARD_NAME="creatlentem_clt-r30b1-ubi"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -484,8 +485,8 @@ ubi_installer() {
 	OPENWRT_RELEASE="25.12.4"
 	OPENWRT_TARGET="https://dlowrt.kuiukov.com/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
 	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-ubi-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-ubi-squashfs-sysupgrade.itb"
+	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
 
 	# Packages added only to the recovery image (LuCI web UI).
 	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)

@@ -68,7 +68,7 @@ log "OpenWrt UBI installer (${BOARD_NAME})"
 echo
 
 INSTALLER_DIR="/installer"
-PRELOADER="$INSTALLER_DIR/mt7981-spim-nand-ubi-ddr3-1866-bl2.img"
+PRELOADER="$(ls -1 $INSTALLER_DIR/mt7981-*-bl2.img)"
 FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-u-boot.fip"
 # Use ls to resolve the wildcard at runtime so the script does not need to
 # hardcode the OpenWrt build version string in the filename.

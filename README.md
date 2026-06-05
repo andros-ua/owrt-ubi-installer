@@ -1,4 +1,4 @@
-## An OpenWrt UBI Installer Image Generator for CreatLentem CLT-R30B1
+## An OpenWrt UBI Installer Image Generator for COMFAST CF-WR631AX
 
 > [!WARNING]
 > This will replace the bootloader (TF-A 2.13, U-Boot 2025.10) and convert the flash layout of the device to an all-in-UBI layout. The installer stores a copy of the previous bootchain in a dedicated UBI volume `boot_backup`.
@@ -39,10 +39,10 @@ You'll need the below to use the script to generate the installer image:
 
 4. Open browser and visit http://192.168.1.1
 
-5. Flash `openwrt-[version]-mediatek-filogic-creatlentem_clt-r30b1-ubi-initramfs-recovery-installer.itb` via sysupgrade.
+5. Flash `openwrt-[version]-mediatek-filogic-comfast_cf-wr631ax-ubi-initramfs-recovery-installer.itb` via sysupgrade.
 
 6. Once OpenWrt initramfs system comes up, do sysupgrade using
-   `openwrt-[version]-mediatek-filogic-creatlentem_clt-r30b1-ubi-squashfs-sysupgrade.itb`
+   `openwrt-[version]-mediatek-filogic-comfast_cf-wr631ax-ubi-squashfs-sysupgrade.itb`
 
 ## Backup stock/vendor bootchain
 

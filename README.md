@@ -29,15 +29,17 @@ You'll need the below to use the script to generate the installer image:
 
 **If you are not interested in building yourself**, the pre-built files are available [here](https://github.com/andros-ua/owrt-ubi-installer/releases).
 
-## Installing OpenWrt
+## Installing OpenWrt all-in-UBI
 
-1. Assign IP 192.168.1.254/24 to your computer's Ethernet port
+1. Ensure your router is running the latest generic OpenWrt firmware. Upgrade it if necessary.
 
-2. Connect Ethernet to the 1GE LAN port
+2. Assign IP 192.168.1.254/24 to your computer's Ethernet port
+
+3. Connect Ethernet to the 1GE LAN port
 
 4. Open browser and visit http://192.168.1.1
 
-5. Flash openwrt-[version]-mediatek-filogic-creatlentem_clt-r30b1-ubi-initramfs-recovery-installer.itb via sysupgrade.
+5. Flash `openwrt-[version]-mediatek-filogic-creatlentem_clt-r30b1-ubi-initramfs-recovery-installer.itb` via sysupgrade.
 
 6. Once OpenWrt initramfs system comes up, do sysupgrade using
    `openwrt-[version]-mediatek-filogic-creatlentem_clt-r30b1-ubi-squashfs-sysupgrade.itb`

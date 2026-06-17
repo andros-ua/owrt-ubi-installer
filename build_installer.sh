@@ -26,7 +26,7 @@ BOARD_NAME="creatlentem_clt-r30b1-ubi"
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="25.12.4"
+OPENWRT_RELEASE="SNAPSHOT"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -34,8 +34,6 @@ DESTDIR="$PWD"
 # PGP key ID used by the OpenWrt project to sign release artifacts.
 OPENWRT_PGP="0x1D53D1877742E911"
 KEYSERVER="keyserver.ubuntu.com"
-# PGP key ID used by andros-ua
-ANDROS_UA_PGP="0x5326B6B2DC1CC51E"
 
 # Absolute path to the directory containing this script; lets us locate
 # sibling files regardless of where the caller invoked us from.
@@ -96,10 +94,6 @@ prepare_openwrt_ib() {
 	# temporary keyring (avoids a network round-trip on warm runs).
 	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $OPENWRT_PGP
 	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || exit 0
-
-	# Add andros-ua key while using custom images
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $ANDROS_UA_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $ANDROS_UA_PGP
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $ANDROS_UA_PGP 1>/dev/null 2>/dev/null || exit 0
 
 	# Always re-fetch the checksum manifest.
 	rm -f "sha256sums.asc" "sha256sums"
@@ -488,10 +482,10 @@ bundle_initrd() {
 #             flashes the sysupgrade image.
 # ---------------------------------------------------------------------------
 ubi_installer() {
-	OPENWRT_TARGET="https://dlowrt.kuiukov.com/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
-	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
+	OPENWRT_TARGET="https://downloads.openwrt.org/snapshots/targets/mediatek/filogic"
+	OPENWRT_IB="openwrt-imagebuilder-mediatek-filogic.Linux-x86_64.tar.zst"
+	OPENWRT_INITRD="openwrt-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
 
 	# Packages added only to the recovery image (LuCI web UI).
 	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)

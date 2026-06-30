@@ -26,7 +26,7 @@ BOARD_NAME="creatlentem_clt-r30b1-ubi"
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="SNAPSHOT"
+OPENWRT_RELEASE="25.12.5"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -482,10 +482,10 @@ bundle_initrd() {
 #             flashes the sysupgrade image.
 # ---------------------------------------------------------------------------
 ubi_installer() {
-	OPENWRT_TARGET="https://downloads.openwrt.org/snapshots/targets/mediatek/filogic"
-	OPENWRT_IB="openwrt-imagebuilder-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
+	OPENWRT_TARGET="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
+	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
+	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
 
 	# Packages added only to the recovery image (LuCI web UI).
 	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)

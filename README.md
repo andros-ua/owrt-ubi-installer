@@ -46,11 +46,10 @@ You'll need the below to use the script to generate the installer image:
 
 ## Backup stock/vendor bootchain
 
-Connect to the device via SSH and enter the following commands:
+Connect to the device via SSH and enter the following command:
 
-```
-mkdir /tmp/boot_backup
-mount -t ubifs ubi0:boot_backup /tmp/boot_backup
+```shell
+cat /dev/ubi0_6 | tar xzv -C /tmp
 ```
 
 Then, copy the files under `/tmp/boot_backup` using *scp* to your computer. These files are needed in case you want to restore the original/vendor firmware. They can also be used in emergency case for reflashing via [UART].
@@ -71,13 +70,13 @@ This will remove any user configuration and allow restoring or upgrading from [s
 
 1. While running the production firmware enter this command in the shell
 
-   ```
+   ```shell
    echo c > /proc/sysrq-trigger
    ```
 
 2. Once the router has rebooted into recovery mode, clear PSTORE to make it reboot into production mode again:
 
-   ```
+   ```shell
    rm /sys/fs/pstore/*
    ```
 

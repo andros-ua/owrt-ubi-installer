@@ -137,21 +137,15 @@ install_prepare_mtd_backup() {
 	log "preparing backup of the $2 from mtd$1 ${3:+using $3 blocks} ${4:+after skipping first $4 blocks}"
 	local mtdnum=$1
 	local ebs=$(cat /sys/class/mtd/mtd${mtdnum}/erasesize)
-	dd bs=$ebs if=/dev/mtd${mtdnum} of=/tmp/backup/$2.bin ${3:+count=$3} ${4:+skip=$4}
+	dd bs=$ebs if=/dev/mtd${mtdnum} of=/tmp/boot_backup/$2.bin ${3:+count=$3} ${4:+skip=$4}
 }
 
-# Write all pre-install backups and the full dmesg (which includes all installer
-# log messages) into a dedicated UBI volume. This volume survives the install
-# and is the primary diagnostic resource if something goes wrong post-flash.
+# Write all pre-install backups into a dedicated UBI volume.
 install_write_backup() {
-	log "writing backup files to ubi volume..."
-	ubimkvol /dev/ubi0 -n 6 -s 6MiB -N boot_backup
-	ubi_mknod ubi0_6
-	mount -t ubifs /dev/ubi0_6 /mnt
-	cp /tmp/backup/* /mnt
+	log "writing backup to ubi volume..."
+	ubimkvol /dev/ubi0 -n 6 -s $(du -b "/tmp/boot_backup.tar.gz" | awk '{print $1}') -N boot_backup
+	ubi_mknod ubi0_6 && ubiupdatevol /dev/ubi0_6 "/tmp/boot_backup.tar.gz"
 	log "Done."
-	dmesg > /mnt/dmesg.log
-	umount /mnt
 }
 
 # Format the UBI partition and populate the fixed-layout volumes expected by
@@ -178,7 +172,6 @@ install_prepare_ubi() {
 	[ "$HAS_ENV" = "1" ] && ubimkvol /dev/ubi0 -n 2 -s 126976 -N ubootenv && ubimkvol /dev/ubi0 -n 3 -s 126976 -N ubootenv2
 }
 
-
 # mtd0 = BL2 (full partition)
 # mtd1 layout at 128k erase blocks:
 #   blocks 0-3    (0x000000-0x07ffff): U-Boot environment
@@ -186,13 +179,15 @@ install_prepare_ubi() {
 #   blocks 20-35  (0x180000-0x27ffff): FIP (BL31 + U-Boot)
 if [ "$HAS_BACKUP" = "1" ]; then
 	log "backing up BL2, Factory, FIP from mtd0, mtd1 before erase"
-	mkdir -p /tmp/backup
+	mkdir -p /tmp/boot_backup
 	install_prepare_mtd_backup 0 BL2
 	install_prepare_mtd_backup 1 u-boot-env 4
 	install_prepare_mtd_backup 1 Factory 16 4
 	install_prepare_mtd_backup 1 FIP 16 20
-fi
 
+	# Create a compressed archive of the backup files and remove the temporary directory.
+	tar czvf /tmp/boot_backup.tar.gz -C /tmp boot_backup && rm -rf /tmp/boot_backup
+fi
 
 # Extract Wi-Fi calibration data before erasing mtd1. Loss of this data
 # requires physical access to restore and will break wireless permanently.
@@ -213,8 +208,7 @@ install_prepare_ubi /dev/mtd1
 log "write recovery ubi volume"
 RECOVERY_SIZE=$(du -b $RECOVERY | awk '{print $1}')
 ubimkvol /dev/ubi0 -n 4 -s $RECOVERY_SIZE -N recovery
-ubi_mknod ubi0_4
-ubiupdatevol /dev/ubi0_4 $RECOVERY
+ubi_mknod ubi0_4 && ubiupdatevol /dev/ubi0_4 $RECOVERY
 
 # Reserve a minimal dynamic volume for the production FIT image. It will be
 # populated on first boot by the sysupgrade or TFTP flow in U-Boot.

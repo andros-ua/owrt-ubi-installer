@@ -180,10 +180,10 @@ install_prepare_ubi() {
 if [ "$HAS_BACKUP" = "1" ]; then
 	log "backing up BL2, Factory, FIP from mtd0, mtd1 before erase"
 	mkdir -p /tmp/boot_backup
-	install_prepare_mtd_backup 0 BL2
-	install_prepare_mtd_backup 1 u-boot-env 4
+#	install_prepare_mtd_backup 0 BL2
+#	install_prepare_mtd_backup 1 u-boot-env 4
 	install_prepare_mtd_backup 1 Factory 16 4
-	install_prepare_mtd_backup 1 FIP 16 20
+#	install_prepare_mtd_backup 1 FIP 16 20
 
 	# Create a compressed archive of the backup files and remove the temporary directory.
 	tar czvf /tmp/boot_backup.tar.gz -C /tmp boot_backup && rm -rf /tmp/boot_backup

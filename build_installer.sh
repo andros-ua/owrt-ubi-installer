@@ -25,7 +25,7 @@ BOARD_NAME="comfast_cf-wr632ax-ubi"
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="25.12.4"
+OPENWRT_RELEASE="25.12.5"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"

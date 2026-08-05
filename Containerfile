@@ -10,6 +10,6 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get -y install \
     squashfs-tools \
     && apt-get autoclean && apt-get autoremove
 
-RUN git clone https://github.com/dangowrt/owrt-ubi-installer.git /build
+RUN git clone https://github.com/andros-ua/owrt-ubi-installer.git -b cf-wa933 /build
 WORKDIR /build
 RUN ./build_installer.sh

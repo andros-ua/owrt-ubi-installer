@@ -19,7 +19,8 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-BOARD_NAME="comfast_cf-wr632ax-ubi"
+# Board-specific variable — update these when switching to a new target.
+BOARD_NAME="comfast_cf-wa933-ubi"
 
 # Name of the BL2 bootloader file to embed in the installer image.
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 

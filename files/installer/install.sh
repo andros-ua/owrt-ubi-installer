@@ -6,40 +6,40 @@ BOARD_NAME=$(cat /proc/device-tree/compatible | tr '\0' '\n' | head -1 | tr ',' 
 
 # LED definitions for the installer initramfs.
 # These are used to signal installer status and errors to the user via the board's LED(s).
-LED_BLUE="blue:status"
-LED_GREEN="green:status"
-LED_RED="red:status"
+LED_BLUE="blue:wlan"
+#LED_GREEN="green:status"
+#LED_RED="red:status"
 
 led_reset() {
 	echo none > /sys/class/leds/${LED_BLUE}/trigger
-	echo none > /sys/class/leds/${LED_GREEN}/trigger
-	echo none > /sys/class/leds/${LED_RED}/trigger
+#	echo none > /sys/class/leds/${LED_GREEN}/trigger
+#	echo none > /sys/class/leds/${LED_RED}/trigger
 	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
-	echo 0 > /sys/class/leds/${LED_GREEN}/brightness
-	echo 0 > /sys/class/leds/${LED_RED}/brightness
+#	echo 0 > /sys/class/leds/${LED_GREEN}/brightness
+#	echo 0 > /sys/class/leds/${LED_RED}/brightness
 }
 
 # Installation complete: solid LED.
 led_done() {
 	led_reset
-	echo 255 > /sys/class/leds/${LED_RED}/brightness
-	echo 255 > /sys/class/leds/${LED_GREEN}/brightness
+	echo 255 > /sys/class/leds/${LED_BLUE}/brightness
+#	echo 255 > /sys/class/leds/${LED_GREEN}/brightness
 }
 
 # Flashing in progress: LED with a short delay to indicate activity.
 led_run() {
 	led_reset
-	echo timer > /sys/class/leds/${LED_GREEN}/trigger
-	echo 1 > /sys/class/leds/${LED_GREEN}/delay_on
-	echo 70 > /sys/class/leds/${LED_GREEN}/delay_off
+	echo timer > /sys/class/leds/${LED_BLUE}/trigger
+	echo 1 > /sys/class/leds/${LED_BLUE}/delay_on
+	echo 70 > /sys/class/leds/${LED_BLUE}/delay_off
 }
 
 # Error state: LED with a long delay to indicate a problem.
 led_error() {
 	led_reset
-	echo timer > /sys/class/leds/${LED_RED}/trigger
-	echo 120 > /sys/class/leds/${LED_RED}/delay_on
-	echo 200 > /sys/class/leds/${LED_RED}/delay_off
+	echo timer > /sys/class/leds/${LED_BLUE}/trigger
+	echo 120 > /sys/class/leds/${LED_BLUE}/delay_on
+	echo 200 > /sys/class/leds/${LED_BLUE}/delay_off
 }
 
 # All installer messages go to the kernel ring buffer so they appear in both

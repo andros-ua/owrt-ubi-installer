@@ -69,10 +69,10 @@ echo
 
 INSTALLER_DIR="/installer"
 PRELOADER="$(ls -1 $INSTALLER_DIR/mt7981-*-bl2.img)"
-FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-ddr4-u-boot.fip"
+FIP="$INSTALLER_DIR/mt7981_${BOARD_NAME}-ubi-ddr4-u-boot.fip"
 # Use ls to resolve the wildcard at runtime so the script does not need to
 # hardcode the OpenWrt build version string in the filename.
-RECOVERY="$(ls -1 $INSTALLER_DIR/openwrt-*mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb)"
+RECOVERY="$(ls -1 $INSTALLER_DIR/openwrt-*-initramfs-recovery.itb)"
 
 # These flags allow selectively skipping volume creation.
 HAS_ENV=1

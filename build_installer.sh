@@ -19,7 +19,7 @@ set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-BOARD_NAME="cmcc_rax3000m-ubi"
+BOARD_NAME="cmcc_rax3000m"
 
 # Name of the BL2 bootloader file to embed in the installer image.
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
@@ -342,7 +342,17 @@ repack_initrd() {
 #     from binding — the installer accesses flash through raw MTD only.
 # ---------------------------------------------------------------------------
 allow_mtd_write() {
-	"$DTC" -I dtb -O dts -o "${WORKDIR}/fdt-1.dts" "${WORKDIR}/fdt-1"
+	# Merge the UBI overlay into the base DTB permanently
+	fdtoverlay -i "${WORKDIR}/fdt-1" -o "${WORKDIR}/fdt-1.merged" "${WORKDIR}/fdt-mt7981b-cmcc-rax3000m-ubi"
+	# Overwrite the original base with the new merged version
+	mv "${WORKDIR}/fdt-1.merged" "${WORKDIR}/fdt-1"
+
+	"$DTC" -I dts -O dtb -o "${WORKDIR}/dummy.dtbo" "${INSTALLERDIR}/misc/dummy.dtso"
+	cp "${WORKDIR}/dummy.dtbo" "${WORKDIR}/fdt-mt7981b-cmcc-rax3000m-emmc"
+	cp "${WORKDIR}/dummy.dtbo" "${WORKDIR}/fdt-mt7981b-cmcc-rax3000m-nand"
+	cp "${WORKDIR}/dummy.dtbo" "${WORKDIR}/fdt-mt7981b-cmcc-rax3000m-ubi"
+
+	"$DTC" -s -I dtb -O dts -o "${WORKDIR}/fdt-1.dts" "${WORKDIR}/fdt-1"
 	rm "${WORKDIR}/fdt-1"
 	grep -v 'read-only' "${WORKDIR}/fdt-1.dts" > "${WORKDIR}/fdt-1.dts.patched"
 	grep -v 'linux,ubi' "${WORKDIR}/fdt-1.dts.patched" > "${WORKDIR}/fdt-1.dts.patched2"
@@ -531,7 +541,7 @@ ubi_installer() {
 	#   recovery .itb — the image built in step 1
 	bundle_initrd installer "${INSTALLERDIR}/dl/${OPENWRT_INITRD}" \
 		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/${PRELOADER}" \
-		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-ddr3-u-boot.fip" \
+		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-ubi-ddr3-u-boot.fip" \
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"

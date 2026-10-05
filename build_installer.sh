@@ -20,10 +20,10 @@ set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
 # Board-specific variable — update these when switching to a new target.
-BOARD_NAME="creatlentem_clt-r30b1-ubi"
+BOARD_NAME="comfast_cf-wr633ax-ubi"
 
 # Name of the BL2 bootloader file to embed in the installer image.
-PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
+PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img"
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
 OPENWRT_RELEASE="25.12.5"

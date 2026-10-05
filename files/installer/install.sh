@@ -6,15 +6,15 @@ BOARD_NAME=$(cat /proc/device-tree/compatible | tr '\0' '\n' | head -1 | tr ',' 
 
 # LED definitions for the installer initramfs.
 # These are used to signal installer status and errors to the user via the board's LED(s).
-#LED_BLUE="blue:status"
+LED_BLUE="blue:status"
 LED_GREEN="green:status"
 LED_RED="red:status"
 
 led_reset() {
-#	echo none > /sys/class/leds/${LED_BLUE}/trigger
+	echo none > /sys/class/leds/${LED_BLUE}/trigger
 	echo none > /sys/class/leds/${LED_GREEN}/trigger
 	echo none > /sys/class/leds/${LED_RED}/trigger
-#	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
+	echo 0 > /sys/class/leds/${LED_BLUE}/brightness
 	echo 0 > /sys/class/leds/${LED_GREEN}/brightness
 	echo 0 > /sys/class/leds/${LED_RED}/brightness
 }

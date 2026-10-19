@@ -22,6 +22,9 @@ set -o pipefail  # propagate failures through pipes
 # Board-specific variable — update these when switching to a new target.
 BOARD_NAME="comfast_cf-wa933-ubi"
 
+# Metadata list for an OEM upgrade image
+SUPPORTED_DEVICES='["cf-wa933", "comfast,cf-wa933"]'
+
 # Name of the BL2 bootloader file to embed in the installer image.
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
@@ -48,6 +51,7 @@ CPIO="${OPENWRT_DIR}/staging_dir/host/bin/cpio"
 MKIMAGE="${OPENWRT_DIR}/staging_dir/host/bin/mkimage"
 APK="${OPENWRT_DIR}/staging_dir/host/bin/apk"
 XZ="${OPENWRT_DIR}/staging_dir/host/bin/xz"
+FWTOOL="${OPENWRT_DIR}/staging_dir/host/bin/fwtool"
 
 # 'unfit' splits a FIT image (.itb) into its component blobs so we can
 # patch individual nodes (kernel, dtb, initrd) and re-pack them.
@@ -540,7 +544,39 @@ ubi_installer() {
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"
+}
+
+factory_ubi_installer() {
+	local dir="sysupgrade-${BOARD_NAME}"
+	mkdir "${WORKDIR}/${dir}"
+
+	# Copy the FIT installer image into the new directory and rename it to 'kernel'
+	cp "${DESTDIR}/${FILEBASE}-installer.itb" "${WORKDIR}/${dir}/kernel"
+
+	# Create a 128KB dummy 'root' file filled with null bytes to satisfy the non-empty requirement
+	head -c 131072 /dev/zero > "${WORKDIR}/${dir}/root"
+
+	# Write the required board identifier string into a 'CONTROL' file
+	echo "BOARD_NAME=${BOARD_NAME}" > "${WORKDIR}/${dir}/CONTROL"
+
+	# Create the tarball (which pads the end of the file with zeros)
+	tar --format=gnu --sort=name --owner=0 --group=0 --numeric-owner \
+			--mtime="@${SOURCE_DATE_EPOCH}" \
+			-C "${WORKDIR}" -cf "${DESTDIR}/${FILEBASE}-installer-factory.bin" "$dir"
+
+	# Extract the valid metadata from the upstream sysupgrade image
+	"${FWTOOL}" -q -i "${WORKDIR}/${dir}/sysupgrade.meta" "${INSTALLERDIR}/dl/${OPENWRT_SYSUPGRADE}"
+
+	# Replace the supported_devices array in the metadata with our own list so that the OEM updater will accept the factory image on the target device.
+	sed -i 's|"supported_devices":\[[^]]*\]|"supported_devices":'"${SUPPORTED_DEVICES}"'|' "${WORKDIR}/${dir}/sysupgrade.meta"
+
+	# Append the metadata to the very end of the padded tarball
+	"${FWTOOL}" -I "${WORKDIR}/${dir}/sysupgrade.meta" "${DESTDIR}/${FILEBASE}-installer-factory.bin"
+
 	rm -r "${WORKDIR}"
 }
 
 ubi_installer
+factory_ubi_installer
+
+echo "Installer build complete."

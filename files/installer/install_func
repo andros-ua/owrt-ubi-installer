@@ -1,0 +1,135 @@
+. /lib/upgrade/nand.sh
+
+
+# All installer messages go to the kernel ring buffer so they appear in both
+# the live console and the dmesg.log saved to the boot_backup UBI volume.
+log () {
+	echo "INSTALLER: $@" > /dev/kmsg
+}
+
+# On unrecoverable error: signal failure via LED, wait for the message to be
+# visible to anyone watching serial, then panic the kernel. A kernel panic is
+# intentional here — it produces a crash dump and prevents the board from
+# silently booting into a half-installed state.
+trigger_crash() {
+	led_error
+	sleep 5
+	log "$@"
+	echo c > /proc/sysrq-trigger
+}
+
+# UBI device nodes are not created by udev in the installer initramfs, so we
+# create them manually from the sysfs uevent attributes after each attach/mkvol.
+ubi_mknod() {
+	local dev="$1"
+	dev="${dev##*/}"
+	[ -e "/sys/class/ubi/$dev/uevent" ] || return 2
+	. "/sys/class/ubi/$dev/uevent"
+	mknod "/dev/$dev" c $MAJOR $MINOR
+}
+
+# Locate the Wi-Fi EEPROM (factory) data on a raw MTD device by scanning for
+# a known magic value. The EEPROM may not start at a fixed offset due to
+# vendor-specific partition layouts, so we scan up to 4 erase blocks from the
+# expected starting offset. The found block is extracted to /tmp/factory for
+# later storage in a dedicated UBI volume.
+# args: 1 - mtd part num, 2 - search offset, 3 - search 'magic'
+install_get_factory() {
+	local mtddev="$1"
+	local ebs=$(cat /sys/class/mtd/$(basename $mtddev)/erasesize)
+	local init_off="$2"
+	local assertm="$3"
+	local off=$init_off
+	local skip="$((init_off / ebs))"
+	local found
+	local magic
+
+	while [ $((off)) -lt $((init_off + 4 * ebs)) ]; do
+		magic="$(hexdump -v -s $off -n 2 -e '"%02x"' $mtddev)"
+		if [ "$magic" = "$assertm" ]; then
+			found=1
+			break
+		fi
+		off=$((off + ebs))
+		skip=$((skip + 1))
+	done
+
+	if [ "$found" != "1" ]; then
+		log "factory partition not found on raw flash offset"
+		return 1
+	fi
+
+	log "found factory partition at offset $(printf %08x $((off)))"
+
+	dd if=$mtddev bs=$ebs skip=$skip count=1 of=/tmp/factory
+}
+
+# Back up raw MTD regions before we erase anything. These are preserved in the
+# boot_backup UBI volume so the original bootloader and calibration data can be
+# recovered if the install goes wrong.
+# args: 1 - mtd num, 2 - mtd part name, 3 - mtd size in erase blocks, 4 - num of blocks to skip (optional)
+install_prepare_mtd_backup() {
+	log "preparing backup of the $2 from mtd$1 ${3:+using $3 blocks} ${4:+after skipping first $4 blocks}"
+	local mtdnum=$1
+	local ebs=$(cat /sys/class/mtd/mtd${mtdnum}/erasesize)
+	dd bs=$ebs if=/dev/mtd${mtdnum} of=/tmp/boot_backup/$2.bin ${3:+count=$3} ${4:+skip=$4}
+}
+
+# reads raw blocks from mtd part, and writes gz compressesed data to dest file 
+# args:
+# 1 - mtd part num
+# 2 - mtd part name, would be used as a dump's file name
+# 3 - read size (in erase blocks)
+# 4 - num of blocks to skip from partition start, default is '0'
+# 5 - destination path to write to, defaults to '/tmp/'
+mtd_gzdump() {
+	log "dumping mtd region: part $2 from mtd$1 ${3:+using $3 blocks} ${4:+after skipping first $4 blocks}"
+	local mtdnum=$1
+	local ebs=$(cat /sys/class/mtd/mtd${mtdnum}/erasesize)
+	dd bs=$ebs if=/dev/mtd${mtdnum} ${3:+count=$3} ${4:+skip=$4} | gzip > ${5:-/tmp/}$2.bin.gz
+}
+
+
+# Write all pre-install backups into a dedicated UBI volume.
+# args:
+# 1 - backup file to write to UBI vol, default is '/tmp/boot_backup.tar.gz'
+install_write_backup() {
+	local bkp=${1:-/tmp/boot_backup.tar.gz}
+	[ -e "$bkp" ] || { echo "err: backup file $bkp not found, skip backup vol creation"; return 1; }
+	log "writing backup to ubi volume..."
+	ubimkvol /dev/ubi0 -n 6 -s $(du -b "$bkp" | awk '{print $1}') -N boot_backup
+	ubi_mknod ubi0_6 && ubiupdatevol /dev/ubi0_6 "$bkp"
+	log "Done."
+}
+
+# Format the UBI partition and populate the fixed-layout volumes expected by
+# the OpenWrt U-Boot port for this board:
+#   vol 0  fip       - BL31 + U-Boot FIP image (static)
+#   vol 1  factory   - Wi-Fi EEPROM / calibration data (static)
+#   vol 2  ubootenv  - primary U-Boot environment store
+#   vol 3  ubootenv2 - redundant U-Boot environment store
+# Volumes 4 (recovery), 5 (fit), and 6 (boot_backup) are written separately.
+install_prepare_ubi() {
+	log "preparing UBI on $1"
+	local mtddev=$1
+	[ -e /sys/class/ubi/ubi0 ] && ubidetach -p $mtddev
+	ubiformat -y $mtddev
+	sleep 1
+	ubiattach -p $mtddev
+	sync
+	sleep 1
+	[ -e /dev/ubi0 ] || ubi_mknod ubi0
+	if [[ "$HAS_FIP" = "1" ]]; then
+		ubimkvol /dev/ubi0 -n 0 -t static -s $(du -b $FIP | awk '{print $1}') -N fip && ubi_mknod ubi0_0
+		[ -e /dev/ubi0_0 ] && ubiupdatevol /dev/ubi0_0 "$FIP"
+	fi
+
+	if [[ "$HAS_FACTORY" = "1" ]]; then
+	    ubimkvol /dev/ubi0 -n 1 -t static -s $(du -b "/tmp/factory" | awk '{print $1}') -N factory && ubi_mknod ubi0_1
+		[ -e /dev/ubi0_0 ] && ubiupdatevol /dev/ubi0_1 "/tmp/factory"
+	fi
+
+	if [[ "$HAS_ENV" = "1" ]]; then
+	 	ubimkvol /dev/ubi0 -n 2 -s 126976 -N ubootenv && ubimkvol /dev/ubi0 -n 3 -s 126976 -N ubootenv2
+	fi
+}

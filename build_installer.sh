@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # Builds a custom OpenWrt installer and recovery image.
 #
 # The script:
@@ -13,20 +13,43 @@
 #
 # Prerequisites:
 #   gcc, libfdt-dev   (to compile the bundled 'unfit' tool)
-#   wget, gpg, xz, cpio, make, cmake
+#   curl, gpg, xz, cpio, make, cmake
 
 set -o errexit   # abort on any non-zero exit status
 set -o nounset   # treat unset variables as errors
 set -o pipefail  # propagate failures through pipes
 
-# Board-specific variable — update these when switching to a new target.
-BOARD_NAME="creatlentem_clt-r30b1-ubi"
+OPENWRT_TARGET="mediatek"
+OPENWRT_SUBTARGET="filogic"
+OPENWRT_PKGARCH="aarch64_cortex-a53"
+
+# Board-specific variables — defined by the router profile selected via --router.  Used to locate the correct OpenWrt artifacts for the target device.
+BOARD_NAME=
+BOARD_CPU=
 
 # Name of the BL2 bootloader file to embed in the installer image.
-PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
+PRELOADER=
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
 OPENWRT_RELEASE="25.12.5"
+
+# Location to download IB and fw imges from, defined depending on board and rel tag
+OPENWRT_TARGET_URL=""
+
+# Custom packages URL where to get pgks to embed in fw images, could be used for local build repos
+OPENWRT_CUSTOM_PKG_URL=""
+
+# Remove Wi-Fi firmware and unneeded daemons from both images — the
+# radios are not used during installation or recovery, and omitting
+# these saves ~10 MiB of initrd space.
+OPENWRT_REMOVE_PACKAGES=(odhcp6c odhcpd-ipv6only ppp ppp-mod-pppoe wpad-basic-mbedtls)
+
+# No extra packages needed in both images beyond what's already in the
+# initramfs; left as an explicit empty array for future extension.
+OPENWRT_ADD_PACKAGES=()
+
+# Packages added only to the recovery image (LuCI web UI).
+OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -34,6 +57,7 @@ DESTDIR="$PWD"
 # PGP key ID used by the OpenWrt project to sign release artifacts.
 OPENWRT_PGP="0x1D53D1877742E911"
 KEYSERVER="keyserver.ubuntu.com"
+SKIP_GPG_CHECK=0  # set to 1 to skip PGP verification of the IB tarball (not recommended, but useful for testing with a local IB build)
 
 # Absolute path to the directory containing this script; lets us locate
 # sibling files regardless of where the caller invoked us from.
@@ -81,51 +105,67 @@ ITSFILE=    # path to the .its (DTS source) dumped from the current .itb
 # saving bandwidth on repeated runs.
 # ---------------------------------------------------------------------------
 prepare_openwrt_ib() {
-	# Isolate GPG state in a throw-away keyring so we don't pollute the
-	# user's real ~/.gnupg and avoid any trust-model surprises.
-	GNUPGHOME="$(mktemp -d)"
-	export GNUPGHOME
-	trap 'rm -rf -- "${GNUPGHOME}"' EXIT
+	if (( "$SKIP_GPG_CHECK" != 1 )); then
+		# Isolate GPG state in a throw-away keyring so we don't pollute the
+		# user's real ~/.gnupg and avoid any trust-model surprises.
+		GNUPGHOME="$(mktemp -d)"
+		export GNUPGHOME
+		trap 'rm -rf -- "${GNUPGHOME}"' EXIT
+	else
+		echo "WARNING: skipping GPG verification of OpenWrt ImageBuilder and sysupgrade images!"
+	fi
 
 	mkdir -p "${INSTALLERDIR}/dl"
 	cd "${INSTALLERDIR}/dl"
 
-	# Import the OpenWrt release key only if it isn't already in our
-	# temporary keyring (avoids a network round-trip on warm runs).
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $OPENWRT_PGP
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || exit 0
+	if (( "$SKIP_GPG_CHECK" != 1 )); then
+		# Import the OpenWrt release key only if it isn't already in our
+		# temporary keyring (avoids a network round-trip on warm runs).
+		gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $OPENWRT_PGP
+		gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || exit 0
 
-	# Always re-fetch the checksum manifest.
-	rm -f "sha256sums.asc" "sha256sums"
-	wget "${OPENWRT_TARGET}/sha256sums.asc"
-	wget "${OPENWRT_TARGET}/sha256sums"
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --verify sha256sums.asc sha256sums || exit 1
+		# Always re-fetch the checksum manifest.
+		rm -f "sha256sums.asc" "sha256sums"
+		curl --fail -L -O "${OPENWRT_TARGET_URL}/sha256sums.asc"
+		curl --fail -L -O "${OPENWRT_TARGET_URL}/sha256sums"
+		gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --verify sha256sums.asc sha256sums || exit 1
 
-	# Tear down the temp-keyring trap now that we're done with GPG.
-	trap - EXIT
-	rm -rf -- "${GNUPGHOME}"
-	export -n GNUPGHOME
+		# Tear down the temp-keyring trap now that we're done with GPG.
+		trap - EXIT
+		rm -rf -- "${GNUPGHOME}"
+		export -n GNUPGHOME
 
-	# Validate any previously downloaded blobs; remove stale ones so wget -c
-	# will re-download rather than silently use a corrupt file.
-	sha256sum -c sha256sums --ignore-missing || rm -f "$OPENWRT_SYSUPGRADE" "$OPENWRT_IB" "$OPENWRT_INITRD"
+		# Validate any previously downloaded blobs; remove stale ones so curl
+		# will re-download rather than silently use a corrupt file.
+		sha256sum -c sha256sums --ignore-missing || rm -f "$OPENWRT_SYSUPGRADE" "$OPENWRT_IB" "$OPENWRT_INITRD"
+	fi
 
-	# Resume-capable downloads — no-ops if the file is already complete.
-	wget -c "${OPENWRT_TARGET}/${OPENWRT_INITRD}"
-	wget -c "${OPENWRT_TARGET}/${OPENWRT_SYSUPGRADE}"
-	wget -c "${OPENWRT_TARGET}/${OPENWRT_IB}"
+	# Resume-capable downloads — no-ops if the file is already complete. Using curl to handle 'file' URIs
+	curl --fail -L -C - -O "${OPENWRT_TARGET_URL}/${OPENWRT_INITRD}"
+	curl --fail -L -C - -O "${OPENWRT_TARGET_URL}/${OPENWRT_SYSUPGRADE}"
+	curl --fail -L -C - -O "${OPENWRT_TARGET_URL}/${OPENWRT_IB}"
 
-	# Final integrity check before we trust any of these files.
-	sha256sum -c sha256sums --ignore-missing || exit 1
+	if (( "$SKIP_GPG_CHECK" != 1 )); then
+		# Final integrity check before we trust any of these files.
+		sha256sum -c sha256sums --ignore-missing || exit 1
+	fi
 
 	mkdir -p "${OPENWRT_DIR}" || exit 1
 	# Strip the top-level directory component so the IB contents land
 	# directly in OPENWRT_DIR regardless of the tarball's internal prefix.
 	tar -xf "${INSTALLERDIR}/dl/${OPENWRT_IB}" -C "${OPENWRT_DIR}" --strip-components=1
 
+
 	# Locate dtc that was built as part of the kernel in the IB.  We need
 	# exactly the version that matches the kernel tree to avoid dtb ABI skew.
-	DTC="$(ls -1 "${OPENWRT_DIR}/build_dir/target-aarch64_cortex-a53_musl/linux-mediatek_filogic/linux-"*"/scripts/dtc/dtc")"
+	local num=$(ls -1 "${OPENWRT_DIR}/build_dir/target-${OPENWRT_PKGARCH}_musl/linux-${OPENWRT_TARGET}_${OPENWRT_SUBTARGET}/linux-"*"/scripts/dtc/dtc" | wc -l)
+	if (( "$num" > 1 )); then
+		echo "more then 1 kernel found under ${OPENWRT_DIR}/build_dir/target-${OPENWRT_PKGARCH}_musl/linux-${OPENWRT_TARGET}_${OPENWRT_SUBTARGET}/linux-..."
+		echo "can't determine proper version, try to purge ./openwrt-ib/build_dir/*"
+		exit 1
+	fi
+
+	DTC="$(ls -1 "${OPENWRT_DIR}/build_dir/target-${OPENWRT_PKGARCH}_musl/linux-${OPENWRT_TARGET}_${OPENWRT_SUBTARGET}/linux-"*"/scripts/dtc/dtc")"
 	[ -x "$DTC" ] || {
 		echo "can't find dtc executable in OpenWrt IB"
 		exit 1
@@ -226,11 +266,12 @@ unfit_image() {
 	mkdir -p "$WORKDIR"
 	cd "$WORKDIR"
 
+	echo "Unpacking FIT image '$INFILE' into '$WORKDIR'..."
 	# Dump raw blobs from the .itb into individual files in WORKDIR.
 	"$UNFIT" "$INFILE"
 
 	# Decompile the .itb to DTS so we can inspect and patch it as text.
-	"$DTC" -I dtb -O dts -o "$ITSFILE" "$INFILE" || exit 2
+	"$DTC" -I dtb -O dts -o "$ITSFILE" "$INFILE" || { echo "ERROR: can't decompile DTS, unfit failed?" >&2; exit 2; } 
 
 	# Detect the FIT layout style used by the original image.
 	EXTERNAL=
@@ -289,7 +330,7 @@ refit_image() {
 # Returns 1 (non-fatal) if no initrd blob was found in the .itb.
 # ---------------------------------------------------------------------------
 extract_initrd() {
-	[ -e "${WORKDIR}/initrd-1" ] || return 1
+	[ -e "${WORKDIR}/initrd-1" ] || { echo "ERROR: ${WORKDIR}/initrd-1 does not exist, unfit failed?" >&2; return 1; }
 	[ -e "${WORKDIR}/initrd" ] && rm -rf "${WORKDIR}/initrd"
 	mkdir "${WORKDIR}/initrd"
 	"${XZ}" -d < "${WORKDIR}/initrd-1" | "${CPIO}" -i -D "${WORKDIR}/initrd"
@@ -389,6 +430,17 @@ bundle_initrd() {
 
 	extract_initrd
 
+	# customize pkg source if defined
+	if [[ -n $OPENWRT_CUSTOM_PKG_URL ]]; then
+		rm "${WORKDIR}/initrd/etc/apk/repositories.d/distfeeds.list"
+		echo "${OPENWRT_CUSTOM_PKG_URL}/base/packages.adb" >> ${WORKDIR}/initrd/etc/apk/repositories.d/customfeeds.list
+		echo "${OPENWRT_CUSTOM_PKG_URL}/luci/packages.adb" >> ${WORKDIR}/initrd/etc/apk/repositories.d/customfeeds.list
+		echo "${OPENWRT_CUSTOM_PKG_URL}/packages/packages.adb" >> ${WORKDIR}/initrd/etc/apk/repositories.d/customfeeds.list
+		#echo "${OPENWRT_CUSTOM_PKG_URL}/routing/packages.adb" >> ${WORKDIR}/initrd/etc/apk/repositories.d/customfeeds.list
+		# clear var to be idempotent here and not to add custom repos twice
+		OPENWRT_CUSTOM_PKG_URL=""
+	fi
+
 	# Remove packages to shrink the initrd (Wi-Fi drivers are irrelevant
 	# during a recovery/install boot and consume several MiB).
 	[[ ${#OPENWRT_REMOVE_PACKAGES[@]} -gt 0 ]] && \
@@ -424,7 +476,10 @@ bundle_initrd() {
 			# Overlay the installer scripts from the repo's files/ directory,
 			# then copy the bootloader blobs (bl2, FIP) and recovery .itb into
 			# /installer inside the initrd so the init script can find them.
-			cp -avr "${INSTALLERDIR}/files/"* "${WORKDIR}/initrd"
+			mkdir -p "${WORKDIR}/initrd/installer" "${WORKDIR}/initrd/lib/"
+			cp -avr "${INSTALLERDIR}/files/lib" "${WORKDIR}/initrd/"
+			cp -v "${INSTALLERDIR}/files/installer/install_func" "${WORKDIR}/initrd/installer/"
+			cp -v "${INSTALLERDIR}/files/installer/${BOARD_NAME}_install.sh" "${WORKDIR}/initrd/installer/install.sh"
 			cp -v "$@" "${WORKDIR}/initrd/installer"
 			;;
 	esac
@@ -482,22 +537,23 @@ bundle_initrd() {
 #             flashes the sysupgrade image.
 # ---------------------------------------------------------------------------
 ubi_installer() {
-	OPENWRT_TARGET="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
-	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
+	local tag_suffix=""
 
-	# Packages added only to the recovery image (LuCI web UI).
-	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)
+	# $OPENWRT_TARGET_URL might be overriden via cmd line arg
+	if [[ -z "$OPENWRT_TARGET_URL" ]]; then
+		if [[ "$OPENWRT_RELEASE" == "snapshot" ]]; then
+			echo "Using OpenWrt snapshot build"
+			OPENWRT_TARGET_URL="https://downloads.openwrt.org/snapshots/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+		else
+			echo "Using OpenWrt release ${OPENWRT_RELEASE}"
+			OPENWRT_TARGET_URL="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+			tag_suffix="-${OPENWRT_RELEASE}"
+		fi
+	fi
 
-	# Remove Wi-Fi firmware and unneeded daemons from both images — the
-	# radios are not used during installation or recovery, and omitting
-	# these saves ~10 MiB of initrd space.
-	OPENWRT_REMOVE_PACKAGES=(kmod-mt7915e kmod-mt7981-firmware mt7981-wo-firmware kmod-mt76-connac kmod-mt76-core odhcp6c odhcpd-ipv6only ppp ppp-mod-pppoe wpad-basic-mbedtls)
-
-	# No extra packages needed in both images beyond what's already in the
-	# initramfs; left as an explicit empty array for future extension.
-	OPENWRT_ADD_PACKAGES=()
+	OPENWRT_IB="openwrt-imagebuilder${tag_suffix}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}.Linux-x86_64.tar.zst"
+	OPENWRT_INITRD="openwrt${tag_suffix}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-${BOARD_NAME}-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt${tag_suffix}-${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-${BOARD_NAME}-squashfs-sysupgrade.itb"
 
 	prepare_openwrt_ib
 
@@ -511,14 +567,17 @@ ubi_installer() {
 	}
 
 	# --- Step 1: recovery image ---
+	echo "== STEP 1: Building recovery image..."
 	bundle_initrd recovery "${INSTALLERDIR}/dl/${OPENWRT_INITRD}"
 	mv "${WORKDIR}/${FILEBASE}.itb" "${DESTDIR}"
 	rm -r "${WORKDIR}"
 
 	# --- Step 2: unmodified sysupgrade image ---
+	echo "== STEP 2: Copying sysupgrade image..."
 	cp "${INSTALLERDIR}/dl/${OPENWRT_SYSUPGRADE}" "${DESTDIR}"
 
 	# --- Step 3: installer image ---
+	echo "== STEP 3: Building installer image..."
 	# Positional args after the imgtype and base .itb are extra files that
 	# bundle_initrd copies into /installer inside the initrd:
 	#   bl2  — raw NAND bootloader stage 1 (written to the very start of flash)
@@ -526,11 +585,129 @@ ubi_installer() {
 	#   recovery .itb — the image built in step 1
 	bundle_initrd installer "${INSTALLERDIR}/dl/${OPENWRT_INITRD}" \
 		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/${PRELOADER}" \
-		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/mt7981_${BOARD_NAME}-u-boot.fip" \
+		"${OPENWRT_DIR}/staging_dir/target-aarch64_cortex-a53_musl/image/${BOARD_CPU}_${BOARD_NAME}-u-boot.fip" \
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"
-	rm -r "${WORKDIR}"
+	#rm -r "${WORKDIR}"
 }
+
+
+# ---------------------------------------------------------------------------
+#
+# set script variables based on the router profile passed in via --router arg
+#
+set_router_profile (){
+    case "$1" in
+    creatlentem_clt-r30b1)
+		BOARD_NAME="creatlentem_clt-r30b1-ubi"
+		BOARD_CPU="mt7981"
+		PRELOADER="${BOARD_CPU}-spim-nand-ubi-ddr3-1866-bl2.img"
+		OPENWRT_REMOVE_PACKAGES+=(kmod-mt7915e kmod-${BOARD_CPU}-firmware ${BOARD_CPU}-wo-firmware kmod-mt76-connac kmod-mt76-core)
+        ;;
+	elecom_wrc-x6000qs)
+		echo "WARN: Router is not yet added in official OpenWrt tree, pls specify local ImageBuilder and image path via '--url' arg"
+		BOARD_NAME="elecom_wrc-x6000qs-ubi"
+		BOARD_CPU="mt7986"
+		PRELOADER="${BOARD_CPU}-spim-nand-ubi-1m-ddr3-bl2.img"
+		OPENWRT_REMOVE_PACKAGES+=(kmod-mt7915e kmod-${BOARD_CPU}-firmware ${BOARD_CPU}-wo-firmware kmod-mt76-connac kmod-mt76-core)
+		OPENWRT_RELEASE="snapshot"
+		SKIP_GPG_CHECK=1
+        ;;
+    "")
+        echo "No router profile set"
+		show_help
+		exit 1
+        ;;
+    *)
+        echo "Unsupported router"
+		show_help
+		exit 1
+        ;;
+    esac
+}
+
+
+# ---------------------------------------------------------------------------
+#	
+# display help message for the script
+#
+show_help () {
+	echo "Usage: $0 -r|--router <router_profile> [options]"
+	echo
+	echo "Options:"
+	echo "  -r|--router <router_profile>   router profile to build for"
+	echo "                              Supported router profiles:"
+	echo "                              - creatlentem_clt-r30b1"
+	echo "                              - elecom_wrc-x6000qs"
+	echo
+	echo "  -t|--tag <openwrt_release>  OpenWrt release to use, i.e. '25.12.5'"
+	echo "  							- use 'snapshot' for the latest snapshot build or local builds with no tag (along with '--img-url' arg)"
+	echo
+	echo "  --img-url <download_url>    Specify URL where to download ImageBuilder and sysupgrade images from"
+	echo "                              this will override offical OpenWrt downloads so you can use a local mirror or"
+	echo "                              a custom build that is not yet released"
+	echo "                              You may use local 'file://' URLs to point to a local directory containing the OpenWrt"
+	echo "                              artifacts, e.g. 'file:///home/user/openwrt/builds/mt7981/filogic'"
+	echo "                              WARNING: GPG verification would fail if the URL is not an official OpenWrt release,"
+	echo "                              be sure you trust the source of the files you are downloading"
+	echo
+	echo "  --pkg-url <download_url>    Specify URL for the system/app packages repository"
+	echo "                              this will override offical OpenWrt downloads so you can use a local mirror or"
+	echo "                              a custom build that is not yet released"
+	echo "                              WARNING: GPG verification would fail if the URL is not an official OpenWrt release,"
+	echo "                              be sure you trust the source of the files you are downloading"
+	echo "  --no-gpg-check              disable GPG verification of OpenWrt ImageBuilder and sysupgrade images"
+	echo "                              (WARN! never disable checks unless you are a developer or working with a local IB builds)"
+	echo "  -h, --help                  Show this help message"
+}
+
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -r|--router)
+            router="$2"
+            shift 2
+            ;;
+        -t|--tag)
+            OPENWRT_RELEASE="$2"
+            shift 2
+            ;;
+		--img-url)
+			if [[ "$2" != http* || "$2" != file* ]]; then
+            	OPENWRT_TARGET_URL="file://$2"
+			else
+            	OPENWRT_TARGET_URL="$2"
+			fi
+            shift 2
+            ;;
+		--pkg-url)
+            OPENWRT_CUSTOM_PKG_URL="$2"
+            shift 2
+            ;;
+		--no-gpg-check)
+            SKIP_GPG_CHECK=1
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            # Positional argument
+            break
+            ;;
+    esac
+done
+
+set_router_profile ${router:-"unknown"}
 
 ubi_installer

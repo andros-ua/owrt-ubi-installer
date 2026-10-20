@@ -486,10 +486,20 @@ bundle_initrd() {
 #             flashes the sysupgrade image.
 # ---------------------------------------------------------------------------
 ubi_installer() {
-	OPENWRT_TARGET="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
-	OPENWRT_IB="openwrt-imagebuilder-${OPENWRT_RELEASE}-mediatek-filogic.Linux-x86_64.tar.zst"
-	OPENWRT_INITRD="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
-	OPENWRT_SYSUPGRADE="openwrt-${OPENWRT_RELEASE}-mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
+	local release_str=""
+
+	case "$OPENWRT_RELEASE" in
+		SNAPSHOT)
+			OPENWRT_TARGET="https://downloads.openwrt.org/snapshots/targets/mediatek/filogic"
+			;;
+		*)
+			OPENWRT_TARGET="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
+			release_str="${OPENWRT_RELEASE}-"
+			;;
+	esac
+	OPENWRT_IB="openwrt-imagebuilder-${release_str}mediatek-filogic.Linux-x86_64.tar.zst"
+	OPENWRT_INITRD="openwrt-${release_str}mediatek-filogic-${BOARD_NAME}-initramfs-recovery.itb"
+	OPENWRT_SYSUPGRADE="openwrt-${release_str}mediatek-filogic-${BOARD_NAME}-squashfs-sysupgrade.itb"
 
 	# Packages added only to the recovery image (LuCI web UI).
 	OPENWRT_ADD_REC_PACKAGES=(uhttpd luci-mod-admin-full luci-theme-bootstrap)

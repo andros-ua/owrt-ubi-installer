@@ -31,6 +31,9 @@ PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img"
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
 OPENWRT_RELEASE="25.12.5"
 
+# Base URL for OpenWrt downloads; the script appends the release/target-specific path to this.
+OPENWRT_URL="downloads.openwrt.org"
+
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
 
@@ -490,10 +493,10 @@ ubi_installer() {
 
 	case "$OPENWRT_RELEASE" in
 		SNAPSHOT)
-			OPENWRT_TARGET="https://downloads.openwrt.org/snapshots/targets/mediatek/filogic"
+			OPENWRT_TARGET="https://${OPENWRT_URL}/snapshots/targets/mediatek/filogic"
 			;;
 		*)
-			OPENWRT_TARGET="https://downloads.openwrt.org/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
+			OPENWRT_TARGET="https://${OPENWRT_URL}/releases/${OPENWRT_RELEASE}/targets/mediatek/filogic"
 			release_str="${OPENWRT_RELEASE}-"
 			;;
 	esac

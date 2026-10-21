@@ -31,11 +31,15 @@ jobs:
           mkdir -m 0700 $HOME/.gnupg
           bash build_installer.sh
 
+      - run: ls -la
+
       - name: upload-artifact - images
         uses: actions/upload-artifact@v6
         with:
           name: images
-          path: "*.itb"
+          path: |
+            *.itb
+            *.bin
 
   release:
     if: inputs.no_release == '0'
@@ -48,6 +52,11 @@ jobs:
 
       - name: Download artifacts
         uses: actions/download-artifact@v7
+        with:
+          name: images
+          path: images
+
+      - run: ls -la images
 
       # https://cli.github.com/manual/gh_release_create
       - name: Create Release
@@ -55,4 +64,4 @@ jobs:
 
       # https://cli.github.com/manual/gh_release_upload
       - name: Upload assets
-        run: gh release upload ${{ inputs.tag || github.ref_name }} images/*.*i* --clobber
+        run: gh release upload ${{ inputs.tag || github.ref_name }} images/* --clobber

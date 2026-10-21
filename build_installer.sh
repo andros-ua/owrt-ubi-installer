@@ -29,7 +29,7 @@ SUPPORTED_DEVICES='["clt,r30b1", "clt,r30b1-112m", "creatlentem,clt-r30b1", "cre
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="25.12.5"
+OPENWRT_RELEASE="25.12.6"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"

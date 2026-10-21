@@ -29,7 +29,7 @@ SUPPORTED_DEVICES='["cf-wr631ax", "comfast,cf-wr631ax"]'
 PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img" 
 
 # OpenWrt release to target for the installer build; must match the version used to build the IB and the .itb images.
-OPENWRT_RELEASE="25.12.5"
+OPENWRT_RELEASE="25.12.6"
 
 # Base URL for OpenWrt downloads; the script appends the release/target-specific path to this.
 OPENWRT_URL="dlowrt.kuiukov.com"

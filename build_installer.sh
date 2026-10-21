@@ -32,7 +32,7 @@ PRELOADER="mt7981-spim-nand-ubi-ddr3-1866-bl2.img"
 OPENWRT_RELEASE="25.12.5"
 
 # Base URL for OpenWrt downloads; the script appends the release/target-specific path to this.
-OPENWRT_URL="downloads.openwrt.org"
+OPENWRT_URL="dlowrt.kuiukov.com"
 
 # Output directory — caller's working directory, not the script's own directory.
 DESTDIR="$PWD"
@@ -40,6 +40,8 @@ DESTDIR="$PWD"
 # PGP key ID used by the OpenWrt project to sign release artifacts.
 OPENWRT_PGP="0x1D53D1877742E911"
 KEYSERVER="keyserver.ubuntu.com"
+# PGP key ID used by andros-ua
+ANDROS_UA_PGP="0x5326B6B2DC1CC51E"
 
 # Absolute path to the directory containing this script; lets us locate
 # sibling files regardless of where the caller invoked us from.
@@ -99,8 +101,8 @@ prepare_openwrt_ib() {
 
 	# Import the OpenWrt release key only if it isn't already in our
 	# temporary keyring (avoids a network round-trip on warm runs).
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $OPENWRT_PGP
-	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP 1>/dev/null 2>/dev/null || exit 0
+	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP $ANDROS_UA_PGP 1>/dev/null 2>/dev/null || gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --keyserver ${KEYSERVER}	--recv-key $OPENWRT_PGP $ANDROS_UA_PGP
+	gpg --no-default-keyring --keyring "${INSTALLERDIR}/openwrt-keyring" --list-key $OPENWRT_PGP $ANDROS_UA_PGP 1>/dev/null 2>/dev/null || exit 0
 
 	# Always re-fetch the checksum manifest.
 	rm -f "sha256sums.asc" "sha256sums"

@@ -53,15 +53,32 @@ int main(int argc, char *argv[])
 	char *get_name = NULL;
 	void const *image_data;
 
-	if (argc < 2)
+	if (argc < 2){
+		fprintf(stderr, "usage: %s <fit image> [image name]\n", argv[0] );
 		return EINVAL;
+	}
 
 	if (argc >= 3)
 		get_name = argv[2];
 
-	fd = open(argv[1], O_RDONLY, 0);
-	if (fd == -1)
+	/* Check whether the file exists and accessible */
+	if (access(argv[1], F_OK) == -1) {
+		fprintf(stderr, "ERROR: File '%s' does not exist or cannot be accessed: %s\n", argv[1], strerror(errno));
 		return errno;
+	}
+
+	/* Check read permission */
+	if (access(argv[1], R_OK) == -1) {
+		fprintf(stderr, "ERROR: File '%s' is not readable: %s\n", argv[1], strerror(errno));
+		return errno;
+	}
+
+	/* Open the file */
+	fd = open(argv[1], O_RDONLY, 0);
+	if (fd == -1) {
+		fprintf(stderr, "ERROR: Cannot open file '%s': %s\n", argv[1], strerror(errno));
+		return errno;
+	}
 
 	if (fstat(fd, &st) == -1) {
 		ret=errno;
@@ -71,16 +88,20 @@ int main(int argc, char *argv[])
 	fit = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 	if (fit == MAP_FAILED) {
 		ret=errno;
+		fprintf(stderr, "ERROR: file mmap failed '%s'\n", strerror(errno));
 		goto closefd;
 	}
 
 	ret = fdt_check_header(fit);
-	if (ret)
+	if (ret){
+		fprintf(stderr, "ERROR: ftd header check failed, wrong or corrupted image file?");
 		goto unmapfd;
+	}
 
 	fitsize = fdt_totalsize(fit);
 	if (fitsize > st.st_size) {
 		ret = -EFBIG;
+		fprintf(stderr, "ERROR: ftd header size is larger then expected, truncated or corrupted image file?");
 		goto unmapfd;
 	}
 
@@ -124,10 +145,14 @@ int main(int argc, char *argv[])
 		if (!get_name || (get_name && !strncmp(get_name, image_name, image_name_len)))
 			write_file(image_name, image_data, image_len);
 
-		printf("FIT: %16s sub-image 0x%08x - 0x%08x '%s' %s%s%s\n",
-			image_type, image_data - fit, image_data + image_len - fit, image_name,
-			image_description?"(":"", image_description?image_description:"",
-			image_description?") ":"");
+		printf("FIT: %16s sub-image 0x%08lx - 0x%08lx '%s' %s%s%s\n",
+			image_type,
+			image_data - fit,
+			image_data + image_len - fit,
+			image_name,
+			image_description ? "(" : "",
+			image_description ? image_description : "",
+			image_description ? ") " : "");
 	}
 
 unmapfd:

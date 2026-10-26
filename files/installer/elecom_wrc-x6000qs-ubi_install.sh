@@ -2,6 +2,9 @@
 
 . /installer/install_func
 
+# cheks if the lock file exists and if it does, aborts the script
+check_lock
+
 BOARD_NAME=$(cat /proc/device-tree/compatible | tr '\0' '\n' | head -1 | tr ',' '_')
 
 INSTALLER_DIR="/installer"

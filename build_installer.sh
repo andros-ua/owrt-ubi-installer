@@ -39,6 +39,10 @@ OPENWRT_TARGET_URL=""
 # Custom packages URL where to get pgks to embed in fw images, could be used for local build repos
 OPENWRT_CUSTOM_PKG_URL=""
 
+# generates image with disabled backup of original mtd partitions,
+# saves space when user already has a backup of the original firmware and does not need to restore it
+NO_BACKUP=0
+
 # Remove Wi-Fi firmware and unneeded daemons from both images — the
 # radios are not used during installation or recovery, and omitting
 # these saves ~10 MiB of initrd space.
@@ -480,6 +484,8 @@ bundle_initrd() {
 			cp -avr "${INSTALLERDIR}/files/lib" "${WORKDIR}/initrd/"
 			cp -v "${INSTALLERDIR}/files/installer/install_func" "${WORKDIR}/initrd/installer/"
 			cp -v "${INSTALLERDIR}/files/installer/${BOARD_NAME}_install.sh" "${WORKDIR}/initrd/installer/install.sh"
+			# disable backup of original mtd partitions if set
+			(( "$NO_BACKUP" == 1 )) && sed -i 's/^HAS_BACKUP=1/HAS_BACKUP=0/g' "${WORKDIR}/initrd/installer/install.sh"
 			cp -v "$@" "${WORKDIR}/initrd/installer"
 			;;
 	esac
@@ -589,7 +595,10 @@ ubi_installer() {
 		"${DESTDIR}/${FILEBASE}.itb"
 
 	mv "${WORKDIR}/${FILEBASE}-installer"* "${DESTDIR}"
-	#rm -r "${WORKDIR}"
+
+
+	# remove the temporary workdir with prepared initrd and unpacked .itb
+	rm -r "${WORKDIR}"
 }
 
 
@@ -659,6 +668,9 @@ show_help () {
 	echo "                              be sure you trust the source of the files you are downloading"
 	echo "  --no-gpg-check              disable GPG verification of OpenWrt ImageBuilder and sysupgrade images"
 	echo "                              (WARN! never disable checks unless you are a developer or working with a local IB builds)"
+	echo "  --no-backup                 generates image with disabled backup of original mtd partitions,"
+	echo "								saves space on flash if you already have a backup of the original partitions"
+	echo
 	echo "  -h, --help                  Show this help message"
 }
 
@@ -687,6 +699,10 @@ while [[ $# -gt 0 ]]; do
             ;;
 		--no-gpg-check)
             SKIP_GPG_CHECK=1
+            shift
+            ;;
+		--no-backup)
+            NO_BACKUP=1
             shift
             ;;
         -h|--help)

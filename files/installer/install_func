@@ -1,11 +1,23 @@
 . /lib/upgrade/nand.sh
 
+# lock file to prevent multiple concurrent runs of the installer script
+lock_file='/tmp/ubi_installer.lock'
+
 
 # All installer messages go to the kernel ring buffer so they appear in both
 # the live console and the dmesg.log saved to the boot_backup UBI volume.
 log () {
 	echo "INSTALLER: $@" > /dev/kmsg
 }
+
+# cheks if the lock file exists and if it does, aborts the script
+check_lock() {
+  if ! lock -n ${lock_file}; then
+	log "found another instance of the installer running, aborting..."
+	exit 1
+  fi
+}
+
 
 # On unrecoverable error: signal failure via LED, wait for the message to be
 # visible to anyone watching serial, then panic the kernel. A kernel panic is
@@ -33,12 +45,13 @@ ubi_mknod() {
 # vendor-specific partition layouts, so we scan up to 4 erase blocks from the
 # expected starting offset. The found block is extracted to /tmp/factory for
 # later storage in a dedicated UBI volume.
-# args: 1 - mtd part num, 2 - search offset, 3 - search 'magic'
+# args: 1 - mtd part num, 2 - search offset, 3 - search 'magic', 4 - blk count to read (optional, default 1)
 install_get_factory() {
 	local mtddev="$1"
 	local ebs=$(cat /sys/class/mtd/$(basename $mtddev)/erasesize)
 	local init_off="$2"
 	local assertm="$3"
+	local blkcnt="${4-1}"
 	local off=$init_off
 	local skip="$((init_off / ebs))"
 	local found
@@ -61,7 +74,7 @@ install_get_factory() {
 
 	log "found factory partition at offset $(printf %08x $((off)))"
 
-	dd if=$mtddev bs=$ebs skip=$skip count=1 of=/tmp/factory
+	dd if=$mtddev bs=$ebs skip=$skip count=$blkcnt of=/tmp/factory
 }
 
 # Back up raw MTD regions before we erase anything. These are preserved in the
@@ -126,7 +139,7 @@ install_prepare_ubi() {
 
 	if [[ "$HAS_FACTORY" = "1" ]]; then
 	    ubimkvol /dev/ubi0 -n 1 -t static -s $(du -b "/tmp/factory" | awk '{print $1}') -N factory && ubi_mknod ubi0_1
-		[ -e /dev/ubi0_0 ] && ubiupdatevol /dev/ubi0_1 "/tmp/factory"
+		[ -e /dev/ubi0_1 ] && ubiupdatevol /dev/ubi0_1 "/tmp/factory"
 	fi
 
 	if [[ "$HAS_ENV" = "1" ]]; then

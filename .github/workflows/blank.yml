@@ -60,7 +60,7 @@ jobs:
 
       # https://cli.github.com/manual/gh_release_create
       - name: Create Release
-        run: gh release create ${{ inputs.tag || github.ref_name }}
+        run: gh release create ${{ inputs.tag || github.ref_name }} --generate-notes
 
       # https://cli.github.com/manual/gh_release_upload
       - name: Upload assets
